@@ -1,7 +1,7 @@
 use anyhow::{self, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn as nn;
-use candle_nn::{Module, VarBuilder, RNN};
+use candle_nn::{Module, VarBuilder};
 use std::path::Path;
 
 
