@@ -2,17 +2,22 @@ use anyhow::{self, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn as nn;
 use candle_nn::{Module, VarBuilder, RNN};
+use std::path::Path;
 
 
 const FLOAT_DTYPE: DType = DType::F32;
 const LONG_DTYPE: DType = DType::I64;
-const MODEL_SAFETENSORS_FILENAME: &str = "./model/model.safetensors";
 
-fn load_optispeech_cnx_model(config: Option<OptiSpeechCNXConfig>) -> Result<OptiSpeechCNXModel> {
+
+/// Load an OptiSpeech model built with the ConvNeXt backbone
+fn load_optispeech_cnx_model<P: AsRef<Path>>(
+    config: Option<OptiSpeechCNXConfig>,
+    model_file_path: P,
+) -> Result<OptiSpeechCNXModel> {
     let config = config.unwrap_or_default();
     let device = Device::Cpu;
     let vb = unsafe {
-        VarBuilder::from_mmaped_safetensors(&[MODEL_SAFETENSORS_FILENAME], FLOAT_DTYPE, &device)?
+        VarBuilder::from_mmaped_safetensors(&[model_file_path], FLOAT_DTYPE, &device)?
     };
     let model = OptiSpeechCNXModel::load(config, vb)?;
     Ok(model)
@@ -609,17 +614,21 @@ mod tests {
     use audio_ops::{AudioSamples, write_wave_samples_to_file};
     use std::path::PathBuf;
 
+    const MODEL_SAFETENSORS_FILENAME: &str = "./model/model.safetensors";
     const INPUT_IDS: &[i64] = &[28, 27, 88, 3, 55, 73, 3, 40, 136, 31, 88, 39, 3, 116, 48, 3, 136, 53, 38, 73, 12];
 
     #[test]
     fn should_load_weights() -> Result<()> {
-        let model = load_optispeech_cnx_model(None)?;
+        let model = load_optispeech_cnx_model(None, MODEL_SAFETENSORS_FILENAME)?;
         Ok(())
     }
     #[test]
-    fn should_forward_pass() -> Result<()> {
+    fn test_forward_pass() -> Result<()> {
         let config = OptiSpeechCNXConfig::default();
-        let model = load_optispeech_cnx_model(Some(config.clone()))?;
+        let model = load_optispeech_cnx_model(
+            Some(config.clone()),
+            &MODEL_SAFETENSORS_FILENAME
+        )?;
         let input_ids =
             Tensor::from_slice(INPUT_IDS, INPUT_IDS.len(), &Device::Cpu)?.unsqueeze(0)?;
         let audio = model.synthesise(&input_ids, None, None, None).unwrap();

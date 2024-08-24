@@ -1,3 +1,4 @@
 /target
 /model
 *.safetensors
+optispeech/*.wav
