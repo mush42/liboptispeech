@@ -1,19 +1,13 @@
-[package]
-name = "liboptispeech"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
 
-[lib]
-name = "liboptispeech"
-crate-type = ["staticlib", "cdylib"]
-
-[dependencies]
-anyhow = "1.0.86"
-candle-core = "0.6.0"
-candle-nn = "0.6.0"
+members = [
+    "audio-ops",
+    "optispeech",
+]
 
 [profile.release]
-codegen-units = 1
-lto = true
 opt-level = 3
+lto = true
 strip = true
+codegen-units = 1

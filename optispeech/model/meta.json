@@ -1,0 +1,711 @@
+{
+  "decoder.convnext.0.dwconv.bias": [
+    256
+  ],
+  "decoder.convnext.0.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "decoder.convnext.0.gamma": [
+    256
+  ],
+  "decoder.convnext.0.norm.bias": [
+    256
+  ],
+  "decoder.convnext.0.norm.weight": [
+    256
+  ],
+  "decoder.convnext.0.pwconv1.bias": [
+    1024
+  ],
+  "decoder.convnext.0.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "decoder.convnext.0.pwconv2.bias": [
+    256
+  ],
+  "decoder.convnext.0.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "decoder.convnext.1.dwconv.bias": [
+    256
+  ],
+  "decoder.convnext.1.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "decoder.convnext.1.gamma": [
+    256
+  ],
+  "decoder.convnext.1.norm.bias": [
+    256
+  ],
+  "decoder.convnext.1.norm.weight": [
+    256
+  ],
+  "decoder.convnext.1.pwconv1.bias": [
+    1024
+  ],
+  "decoder.convnext.1.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "decoder.convnext.1.pwconv2.bias": [
+    256
+  ],
+  "decoder.convnext.1.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "decoder.convnext.2.dwconv.bias": [
+    256
+  ],
+  "decoder.convnext.2.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "decoder.convnext.2.gamma": [
+    256
+  ],
+  "decoder.convnext.2.norm.bias": [
+    256
+  ],
+  "decoder.convnext.2.norm.weight": [
+    256
+  ],
+  "decoder.convnext.2.pwconv1.bias": [
+    1024
+  ],
+  "decoder.convnext.2.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "decoder.convnext.2.pwconv2.bias": [
+    256
+  ],
+  "decoder.convnext.2.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "decoder.convnext.3.dwconv.bias": [
+    256
+  ],
+  "decoder.convnext.3.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "decoder.convnext.3.gamma": [
+    256
+  ],
+  "decoder.convnext.3.norm.bias": [
+    256
+  ],
+  "decoder.convnext.3.norm.weight": [
+    256
+  ],
+  "decoder.convnext.3.pwconv1.bias": [
+    1024
+  ],
+  "decoder.convnext.3.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "decoder.convnext.3.pwconv2.bias": [
+    256
+  ],
+  "decoder.convnext.3.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "decoder.final_layer_norm.bias": [
+    256
+  ],
+  "decoder.final_layer_norm.weight": [
+    256
+  ],
+  "duration_predictor.conv.0.0.bias": [
+    384
+  ],
+  "duration_predictor.conv.0.0.weight": [
+    384,
+    256,
+    3
+  ],
+  "duration_predictor.conv.0.2.bias": [
+    384
+  ],
+  "duration_predictor.conv.0.2.weight": [
+    384
+  ],
+  "duration_predictor.conv.1.0.bias": [
+    384
+  ],
+  "duration_predictor.conv.1.0.weight": [
+    384,
+    384,
+    3
+  ],
+  "duration_predictor.conv.1.2.bias": [
+    384
+  ],
+  "duration_predictor.conv.1.2.weight": [
+    384
+  ],
+  "duration_predictor.linear.bias": [
+    1
+  ],
+  "duration_predictor.linear.weight": [
+    1,
+    384
+  ],
+  "encoder.convnext.0.dwconv.bias": [
+    256
+  ],
+  "encoder.convnext.0.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "encoder.convnext.0.gamma": [
+    256
+  ],
+  "encoder.convnext.0.norm.bias": [
+    256
+  ],
+  "encoder.convnext.0.norm.weight": [
+    256
+  ],
+  "encoder.convnext.0.pwconv1.bias": [
+    1024
+  ],
+  "encoder.convnext.0.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "encoder.convnext.0.pwconv2.bias": [
+    256
+  ],
+  "encoder.convnext.0.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "encoder.convnext.1.dwconv.bias": [
+    256
+  ],
+  "encoder.convnext.1.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "encoder.convnext.1.gamma": [
+    256
+  ],
+  "encoder.convnext.1.norm.bias": [
+    256
+  ],
+  "encoder.convnext.1.norm.weight": [
+    256
+  ],
+  "encoder.convnext.1.pwconv1.bias": [
+    1024
+  ],
+  "encoder.convnext.1.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "encoder.convnext.1.pwconv2.bias": [
+    256
+  ],
+  "encoder.convnext.1.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "encoder.convnext.2.dwconv.bias": [
+    256
+  ],
+  "encoder.convnext.2.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "encoder.convnext.2.gamma": [
+    256
+  ],
+  "encoder.convnext.2.norm.bias": [
+    256
+  ],
+  "encoder.convnext.2.norm.weight": [
+    256
+  ],
+  "encoder.convnext.2.pwconv1.bias": [
+    1024
+  ],
+  "encoder.convnext.2.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "encoder.convnext.2.pwconv2.bias": [
+    256
+  ],
+  "encoder.convnext.2.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "encoder.convnext.3.dwconv.bias": [
+    256
+  ],
+  "encoder.convnext.3.dwconv.weight": [
+    256,
+    1,
+    7
+  ],
+  "encoder.convnext.3.gamma": [
+    256
+  ],
+  "encoder.convnext.3.norm.bias": [
+    256
+  ],
+  "encoder.convnext.3.norm.weight": [
+    256
+  ],
+  "encoder.convnext.3.pwconv1.bias": [
+    1024
+  ],
+  "encoder.convnext.3.pwconv1.weight": [
+    1024,
+    256
+  ],
+  "encoder.convnext.3.pwconv2.bias": [
+    256
+  ],
+  "encoder.convnext.3.pwconv2.weight": [
+    256,
+    1024
+  ],
+  "encoder.final_layer_norm.bias": [
+    256
+  ],
+  "encoder.final_layer_norm.weight": [
+    256
+  ],
+  "energy_predictor.embed.0.bias": [
+    256
+  ],
+  "energy_predictor.embed.0.weight": [
+    256,
+    1,
+    9
+  ],
+  "energy_predictor.predictor.conv.0.0.bias": [
+    384
+  ],
+  "energy_predictor.predictor.conv.0.0.weight": [
+    384,
+    256,
+    3
+  ],
+  "energy_predictor.predictor.conv.0.2.bias": [
+    384
+  ],
+  "energy_predictor.predictor.conv.0.2.weight": [
+    384
+  ],
+  "energy_predictor.predictor.conv.1.0.bias": [
+    384
+  ],
+  "energy_predictor.predictor.conv.1.0.weight": [
+    384,
+    384,
+    3
+  ],
+  "energy_predictor.predictor.conv.1.2.bias": [
+    384
+  ],
+  "energy_predictor.predictor.conv.1.2.weight": [
+    384
+  ],
+  "energy_predictor.predictor.linear.bias": [
+    1
+  ],
+  "energy_predictor.predictor.linear.weight": [
+    1,
+    384
+  ],
+  "pitch_predictor.embed.0.bias": [
+    256
+  ],
+  "pitch_predictor.embed.0.weight": [
+    256,
+    1,
+    9
+  ],
+  "pitch_predictor.predictor.conv.0.0.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.0.0.weight": [
+    256,
+    256,
+    5
+  ],
+  "pitch_predictor.predictor.conv.0.2.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.0.2.weight": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.1.0.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.1.0.weight": [
+    256,
+    256,
+    5
+  ],
+  "pitch_predictor.predictor.conv.1.2.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.1.2.weight": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.2.0.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.2.0.weight": [
+    256,
+    256,
+    5
+  ],
+  "pitch_predictor.predictor.conv.2.2.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.2.2.weight": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.3.0.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.3.0.weight": [
+    256,
+    256,
+    5
+  ],
+  "pitch_predictor.predictor.conv.3.2.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.3.2.weight": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.4.0.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.4.0.weight": [
+    256,
+    256,
+    5
+  ],
+  "pitch_predictor.predictor.conv.4.2.bias": [
+    256
+  ],
+  "pitch_predictor.predictor.conv.4.2.weight": [
+    256
+  ],
+  "pitch_predictor.predictor.linear.bias": [
+    1
+  ],
+  "pitch_predictor.predictor.linear.weight": [
+    1,
+    256
+  ],
+  "text_embedding.embed_positions.scale": [
+    1
+  ],
+  "text_embedding.embed_tokens.weight": [
+    250,
+    256
+  ],
+  "wav_generator.backbone.convnext.0.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.0.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.0.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.0.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.0.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.0.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.0.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.0.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.0.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.1.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.1.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.1.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.1.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.1.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.1.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.1.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.1.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.1.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.2.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.2.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.2.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.2.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.2.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.2.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.2.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.2.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.2.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.3.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.3.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.3.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.3.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.3.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.3.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.3.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.3.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.3.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.4.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.4.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.4.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.4.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.4.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.4.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.4.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.4.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.4.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.5.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.5.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.5.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.5.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.5.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.5.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.5.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.5.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.5.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.6.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.6.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.6.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.6.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.6.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.6.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.6.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.6.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.6.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.convnext.7.dwconv.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.7.dwconv.weight": [
+    384,
+    1,
+    7
+  ],
+  "wav_generator.backbone.convnext.7.gamma": [
+    384
+  ],
+  "wav_generator.backbone.convnext.7.norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.7.norm.weight": [
+    384
+  ],
+  "wav_generator.backbone.convnext.7.pwconv1.bias": [
+    1280
+  ],
+  "wav_generator.backbone.convnext.7.pwconv1.weight": [
+    1280,
+    384
+  ],
+  "wav_generator.backbone.convnext.7.pwconv2.bias": [
+    384
+  ],
+  "wav_generator.backbone.convnext.7.pwconv2.weight": [
+    384,
+    1280
+  ],
+  "wav_generator.backbone.final_layer_norm.bias": [
+    384
+  ],
+  "wav_generator.backbone.final_layer_norm.weight": [
+    384
+  ],
+  "wav_generator.embed.bias": [
+    384
+  ],
+  "wav_generator.embed.weight": [
+    384,
+    256,
+    7
+  ],
+  "wav_generator.head.linear_1.bias": [
+    2050
+  ],
+  "wav_generator.head.linear_1.weight": [
+    2050,
+    384
+  ],
+  "wav_generator.head.linear_2.weight": [
+    300,
+    2050
+  ],
+  "wav_generator.norm.bias": [
+    384
+  ],
+  "wav_generator.norm.weight": [
+    384
+  ]
+}

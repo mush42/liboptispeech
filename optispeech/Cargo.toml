@@ -1,0 +1,11 @@
+[package]
+name = "optispeech"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+audio-ops = { path="../audio-ops", version="*" }
+anyhow = "1.0.86"
+candle-core = "0.6.0"
+candle-nn = "0.6.0"
+
