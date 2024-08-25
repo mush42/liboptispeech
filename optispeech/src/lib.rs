@@ -2,29 +2,14 @@ use anyhow::{self, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn as nn;
 use candle_nn::{Module, VarBuilder};
+use audio_ops::AudioSamples;
 use std::path::Path;
-
 
 const FLOAT_DTYPE: DType = DType::F32;
 const LONG_DTYPE: DType = DType::I64;
 
-
-/// Load an OptiSpeech model built with the ConvNeXt backbone
-fn load_optispeech_cnx_model<P: AsRef<Path>>(
-    config: Option<OptiSpeechCNXConfig>,
-    model_file_path: P,
-) -> Result<OptiSpeechCNXModel> {
-    let config = config.unwrap_or_default();
-    let device = Device::Cpu;
-    let vb = unsafe {
-        VarBuilder::from_mmaped_safetensors(&[model_file_path], FLOAT_DTYPE, &device)?
-    };
-    let model = OptiSpeechCNXModel::load(config, vb)?;
-    Ok(model)
-}
-
 #[derive(Debug, Clone)]
-struct OptiSpeechCNXConfig {
+pub struct OptiSpeechCNXConfig {
     sample_rate: usize,
     num_channels: usize,
     sample_width: usize,
@@ -92,6 +77,53 @@ impl Default for OptiSpeechCNXConfig {
     }
 }
 
+fn pad_sequences<'a>(
+    sequences: &'a [&[i64]],
+    padding_value: Option<i64>,
+) -> Result<(Tensor, Tensor)> {
+    let lengths = Vec::from_iter(sequences.iter().map(|s| s.len() as i64));
+    let max_length = match lengths.iter().max() {
+        Some(val) => *val as usize,
+        None => anyhow::bail!("Empty input to pad sequences"),
+    };
+    let padding_value = padding_value.unwrap_or(0);
+    let padded_seqs = Vec::from_iter(
+        sequences
+            .iter()
+            .map(|s| {
+                let mut out = Vec::with_capacity(max_length);
+                out.extend(s.iter().cloned());
+                out.resize(max_length, padding_value);
+                out
+            })
+            .flatten(),
+    );
+    let out = Tensor::from_vec(padded_seqs, (sequences.len(), max_length), &Device::Cpu)?;
+    let lengths = Tensor::from_slice(&lengths, lengths.len(), &Device::Cpu)?;
+    Ok((out, lengths))
+}
+
+fn unpad_sequences<'a>(x: &Tensor, lengths: &Tensor) -> Result<Vec<Vec<f32>>> {
+    let lengths = lengths.to_dtype(LONG_DTYPE)?.to_vec1::<i64>()?;
+    let mut vecs = x.to_vec2::<f32>()?;
+    for (ref mut v, length) in vecs.iter_mut().zip(lengths.iter()) {
+        // v.drain(*length as usize..);
+    }
+    Ok(vecs)
+}
+
+fn sequence_mask(lengths: &Tensor, max_length: Option<i64>) -> Result<Tensor> {
+    let max_length = match max_length {
+        Some(val) => val,
+        None => lengths.max(0)?.to_scalar::<i64>()?,
+    };
+    let x = Tensor::arange(0i64, max_length, lengths.device())?.to_dtype(lengths.dtype())?;
+    let mask = x
+        .unsqueeze(0)?
+        .broadcast_lt(&lengths.unsqueeze(1)?)?
+        .to_dtype(LONG_DTYPE)?;
+    Ok(mask)
+}
 
 fn layer_norm(dim: usize, eps: Option<f64>, vb: VarBuilder) -> Result<nn::LayerNorm> {
     let mut layer_config = nn::LayerNormConfig::default();
@@ -125,7 +157,7 @@ fn conv1d(
         out_channels,
         kernel_size,
         layer_config,
-        vb
+        vb,
     )?)
 }
 
@@ -135,11 +167,11 @@ struct ScaledSinusoidalEmbedding {
 }
 
 impl ScaledSinusoidalEmbedding {
-
     fn load(vb: &VarBuilder, dim: usize, theta: f32) -> Result<Self> {
         let scale = vb.get(&[1], "scale")?.squeeze(0)?.to_scalar::<f32>()? as f64;
         let half_dim = dim / 2;
-        let freq_seq = Tensor::arange(0i64, half_dim as i64, &Device::Cpu)?.to_dtype(FLOAT_DTYPE)?;
+        let freq_seq =
+            Tensor::arange(0i64, half_dim as i64, &Device::Cpu)?.to_dtype(FLOAT_DTYPE)?;
         let freq_seq = (freq_seq / half_dim as f64)?;
         let inv_freq = Tensor::from_vec(vec![theta], (1,), &Device::Cpu)?
             .broadcast_pow(&(freq_seq * -1.0f64)?)?;
@@ -148,7 +180,7 @@ impl ScaledSinusoidalEmbedding {
 }
 
 impl nn::Module for ScaledSinusoidalEmbedding {
-    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor, > {
+    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let (_batch, seq_length) = x.dims2()?;
         let pos = Tensor::arange(0i64, seq_length as i64, x.device())?.to_dtype(FLOAT_DTYPE)?;
         let mut emb = pos.unsqueeze(1)?.broadcast_mul(&self.inv_freq)?;
@@ -170,21 +202,21 @@ impl Default for GaussianUpsampling {
 impl GaussianUpsampling {
     fn upsample_features(&self, x: &Tensor, durations: &Tensor) -> Result<Tensor> {
         let device = x.device();
-        let (B, __, _) = x.dims3()?;
-        let t_feats = durations.sum(1)?.squeeze(0)?.to_scalar::<f32>()?;
+        let (batch, __, _) = x.dims3()?;
+        let t_feats = durations.sum(1)?.max(0)?.to_scalar::<f32>()?;
         let t = Tensor::arange(0i64, t_feats as i64, &device)?
             .unsqueeze(0)?
-            .repeat((B, 1))?
+            .repeat((batch, 1))?
             .to_dtype(FLOAT_DTYPE)?;
         let c = (durations.cumsum(1)? - durations / 2.0f64)?;
-        let energy = (
-            Tensor::try_from(-1.0f64 * self.delta as f64)?
+        let energy = (Tensor::try_from(-1.0f64 * self.delta as f64)?
             .unsqueeze(0)?
             .to_dtype(FLOAT_DTYPE)?
             .broadcast_mul(
-                &(t.unsqueeze(2)?.broadcast_sub(&c.unsqueeze(1)?)?.powf(2.0f64)?)
-            )
-        )?;
+                &(t.unsqueeze(2)?
+                    .broadcast_sub(&c.unsqueeze(1)?)?
+                    .powf(2.0f64)?),
+            ))?;
         let p_attn = nn::ops::softmax(&energy, 2)?;
         let x = p_attn.matmul(&x)?;
         Ok(x)
@@ -206,7 +238,8 @@ impl TextEmbedding {
     ) -> Result<Self> {
         let embed_scale = (dim as f64).sqrt();
         let embed_tokens = nn::embedding(n_vocab, dim, vb.pp("embed_tokens"))?;
-        let embed_positions = ScaledSinusoidalEmbedding::load(&vb.pp("embed_positions"), dim, max_source_positions)?;
+        let embed_positions =
+            ScaledSinusoidalEmbedding::load(&vb.pp("embed_positions"), dim, max_source_positions)?;
         Ok(Self {
             embed_scale,
             embed_tokens,
@@ -216,12 +249,12 @@ impl TextEmbedding {
 }
 
 impl nn::Module for TextEmbedding {
-    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor, > {
+    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let src_tokens = x;
         let embeddings = self.embed_tokens.forward(&src_tokens)?;
         let embed = (embeddings * self.embed_scale)?;
         let positions = self.embed_positions.forward(&src_tokens)?;
-        let x = embed.add(&positions.unsqueeze(0)?)?;
+        let x = embed.broadcast_add(&positions.unsqueeze(0)?)?;
         Ok(x)
     }
 }
@@ -236,9 +269,7 @@ struct ConvNeXtLayer {
 
 impl ConvNeXtLayer {
     fn load(vb: &VarBuilder, dim: usize, intermediate_dim: usize) -> Result<Self> {
-        let dwconv = conv1d(
-            dim, dim, 7, Some(3), None, Some(dim), vb.pp("dwconv")
-        )?;
+        let dwconv = conv1d(dim, dim, 7, Some(3), None, Some(dim), vb.pp("dwconv"))?;
         let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"))?;
         Ok(Self {
             dwconv,
@@ -251,7 +282,7 @@ impl ConvNeXtLayer {
 }
 
 impl nn::Module for ConvNeXtLayer {
-    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor, > {
+    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let residual = x.clone();
         let x = self.dwconv.forward(&x)?;
         let x = x.transpose(1, 2)?; // (B, C, T) -> (B, T, C)
@@ -284,17 +315,16 @@ impl ConvNeXtBackbone {
                 ConvNeXtLayer::load(&vb.pp(format!("convnext.{i}")), dim, intermediate_dim)?;
             convnexts = convnexts.add(layer);
         }
-        let final_layer_norm = layer_norm(
-            dim,
-            Some(1e-6),
-            vb.pp("final_layer_norm"),
-        )?;
-        Ok(Self { convnexts, final_layer_norm, })
+        let final_layer_norm = layer_norm(dim, Some(1e-6), vb.pp("final_layer_norm"))?;
+        Ok(Self {
+            convnexts,
+            final_layer_norm,
+        })
     }
 }
 
 impl nn::Module for ConvNeXtBackbone {
-    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor, > {
+    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let x = x.transpose(1, 2)?;
         let x = self.convnexts.forward(&x)?;
         let x = x.transpose(1, 2)?;
@@ -343,7 +373,7 @@ impl VariancePredictor {
 }
 
 impl nn::Module for VariancePredictor {
-    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor, > {
+    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let x = self.convs.forward(&x)?;
         let x = self.linear.forward(&x)?;
         Ok(x)
@@ -371,13 +401,19 @@ impl DurationPredictor {
             clip_val,
         })
     }
-    fn infer(&self, x: &Tensor, factor: Option<f64>) -> Result<Tensor> {
+    fn infer(&self, x: &Tensor, mask: Option<&Tensor>, factor: Option<f64>) -> Result<Tensor> {
         let log_durations = self.var_predictor.forward(&x)?;
         // from log to linear domain
-        let durations = (log_durations.exp()? - self.clip_val)?;
+        let mut durations = (log_durations.exp()? - self.clip_val)?;
+        if let Some(factor) = factor {
+            durations = (durations * factor)?;
+        }
         let durations = (durations * factor.unwrap_or(1.0f64))?;
         let durations = durations.ceil()?;
-        let durations = durations.clamp(0.0, f64::INFINITY)?;
+        let mut durations = durations.clamp(0.0, f64::INFINITY)?;
+        if let Some(mask) = mask {
+            durations = durations.broadcast_mul(mask)?;
+        }
         let durations = durations.squeeze(2)?;
         Ok(durations)
     }
@@ -411,17 +447,22 @@ impl PitchPredictor {
             embed_kernel_size,
             Some(padding),
             None,
-            None, 
+            None,
             vb.pp("embed.0"),
         )?;
         Ok(Self { predictor, embed })
     }
-    fn infer(&self, x: &Tensor, factor: Option<f64>) -> Result<Tensor> {
-        let preds = self.predictor.forward(&x)?;
-        let preds = (preds * factor.unwrap_or(1.0f64))?;
+    fn infer(&self, x: &Tensor, mask: Option<&Tensor>, factor: Option<f64>) -> Result<Tensor> {
+        let mut preds = self.predictor.forward(&x)?;
+        if let Some(factor) = factor {
+            preds = (preds * factor)?
+        }
         let emb = self.embed.forward(&preds.transpose(1, 2)?)?;
         let emb = emb.transpose(1, 2)?;
-        let x = x.add(&emb)?;
+        let mut x = x.add(&emb)?;
+        if let Some(mask) = mask {
+            x = x.broadcast_mul(mask)?;
+        }
         Ok(x)
     }
 }
@@ -447,22 +488,10 @@ impl WaveNeXtVocoder {
         n_fft: usize,
         hop_size: usize,
     ) -> Result<Self> {
-        let embed = conv1d(
-            input_dim,
-            dim,
-            7,
-            Some(3),
-            None,
-            None,
-            vb.pp("embed"),
-        )?;
-        let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"),)?;
-        let backbone = ConvNeXtBackbone::load(
-            &vb.pp("backbone"),
-            num_layers,
-            dim,
-            intermediate_dim,
-        )?;
+        let embed = conv1d(input_dim, dim, 7, Some(3), None, None, vb.pp("embed"))?;
+        let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"))?;
+        let backbone =
+            ConvNeXtBackbone::load(&vb.pp("backbone"), num_layers, dim, intermediate_dim)?;
         // head
         let l_fft = n_fft + 2;
         let l_shift = hop_size;
@@ -484,25 +513,51 @@ impl nn::Module for WaveNeXtVocoder {
         let x = x.transpose(1, 2)?;
         let x = self.norm.forward(&x)?;
         let x = self.backbone.forward(&x)?; // masking
-        // Head
+                                            // Head
         let (b, _, _) = x.dims3()?;
         let x = self.linear_1.forward(&x)?;
         let x = self.linear_2.forward(&x)?;
         let (_, c, t) = x.dims3()?;
-        let audio = x.reshape((b,  c * t))?;
+        let audio = x.reshape((b, c * t))?;
         let audio = audio.clamp(-1.0, 1.0)?;
         Ok(audio)
     }
 }
 
-struct InferenceConfig {
-    d_factor: f64,
-    p_factor: f64,
-    e_factor: f64,
+pub struct InferenceConfig {
+    pub sample_rate: usize,
+    pub d_factor: f64,
+    pub p_factor: f64,
+    pub e_factor: f64,
 }
 
-struct OptiSpeechCNXModel {
-    inference_config: InferenceConfig,
+pub struct InferenceOutput {
+    pub audio_samples: Vec<AudioSamples>,
+    pub inference_ms: f64,
+    pub sample_rate: usize,
+}
+
+impl InferenceOutput {
+    pub fn iter_audio(&self) -> impl Iterator<Item=&AudioSamples> {
+        self.audio_samples.iter()
+    }
+    pub fn latency(&self) -> f64 {
+        self.inference_ms
+    }
+    pub fn rtf(&self) -> f64 {
+        let num_samples: usize = self
+            .audio_samples
+            .iter()
+            .map(|s| s.as_vec().len())
+            .sum();
+        let audio_ms = (num_samples as f64 / self.sample_rate as f64) * 1000.0;
+        self.inference_ms / audio_ms
+    }
+}
+
+
+pub struct OptiSpeechCNXModel {
+    pub inference_config: InferenceConfig,
     text_embedding: TextEmbedding,
     encoder: ConvNeXtBackbone,
     duration_predictor: DurationPredictor,
@@ -514,6 +569,21 @@ struct OptiSpeechCNXModel {
 }
 
 impl OptiSpeechCNXModel {
+    pub const NUM_CHANNELS: usize = 1;
+    pub const SAMPLE_WIDTH: usize = 2;
+
+    /// Load an OptiSpeech model built with the ConvNeXt backbone
+    pub fn from_path<P: AsRef<Path>>(
+        model_file_path: P,
+        config: Option<OptiSpeechCNXConfig>,
+    ) -> Result<Self> {
+        let config = config.unwrap_or_default();
+        let device = Device::Cpu;
+        let vb =
+            unsafe { VarBuilder::from_mmaped_safetensors(&[model_file_path], FLOAT_DTYPE, &device)? };
+        let model = Self::load(config, vb)?;
+        Ok(model)
+    }
     fn load(config: OptiSpeechCNXConfig, vb: VarBuilder) -> Result<Self> {
         let text_embedding = TextEmbedding::load(
             &vb.pp("text_embedding"),
@@ -568,6 +638,7 @@ impl OptiSpeechCNXModel {
             config.hop_size,
         )?;
         let inference_config = InferenceConfig {
+            sample_rate: config.sample_rate,
             d_factor: config.d_factor,
             p_factor: config.p_factor,
             e_factor: config.e_factor,
@@ -584,26 +655,77 @@ impl OptiSpeechCNXModel {
             vocoder,
         })
     }
-    fn synthesise(&self,
-        src_tokens: &Tensor,
+    pub fn prepare_input(&self, input_ids: &[&[i64]]) -> Result<(Tensor, Tensor)> {
+        Ok(pad_sequences(input_ids, None)?)
+    }
+    pub fn synthesise(
+        &self,
+        inputs: &Tensor,
+        input_lengths: &Tensor,
         d_factor: Option<f64>,
         p_factor: Option<f64>,
         e_factor: Option<f64>,
-    ) -> Result<Tensor> {
+    ) -> Result<InferenceOutput> {
         let (d_factor, p_factor, e_factor) = (
             d_factor.or(Some(self.inference_config.d_factor)),
             p_factor.or(Some(self.inference_config.p_factor)),
             e_factor.or(Some(self.inference_config.e_factor)),
         );
-        let token_emb = self.text_embedding.forward(&src_tokens)?;
+        let timer = std::time::Instant::now();
+        let (batch, max_length) = inputs.dims2()?;
+        // Input masks
+        let mask = if batch > 1 {
+            let mask = sequence_mask(&input_lengths, None)?
+                .unsqueeze(2)?
+                .to_dtype(FLOAT_DTYPE)?;
+            Some(mask)
+        } else {
+            None
+        };
+        let input_padding_mask = match mask {
+            Some(ref m) => Some(m.ones_like()?.sub(m)?),
+            None => None,
+        };
+        let token_emb = self.text_embedding.forward(&inputs)?;
         let enc_out = self.encoder.forward(&token_emb)?;
-        let durations = self.duration_predictor.infer(&enc_out, d_factor)?;
-        let xp = self.pitch_predictor.infer(&enc_out, p_factor)?;
-        let xe = self.energy_predictor.infer(&xp, e_factor)?;
-        let upsampled = self.gaussian_upsampling.upsample_features(&xe, &durations)?;
+        let durations = self
+            .duration_predictor
+            .infer(&enc_out, mask.as_ref(), d_factor)?;
+        let xp = self
+            .pitch_predictor
+            .infer(&enc_out, mask.as_ref(), p_factor)?;
+        let mut xe = self.energy_predictor.infer(&xp, mask.as_ref(), e_factor)?;
+        if let Some(ref mask) = mask {
+            xe = xe.broadcast_mul(&mask)?;
+        }
+        let duration_sum = durations.sum(1)?;
+        let target_mask = if batch > 1 {
+            Some(
+                sequence_mask(&duration_sum.to_dtype(LONG_DTYPE)?, None)?
+                    .unsqueeze(2)?
+                    .to_dtype(FLOAT_DTYPE)?,
+            )
+        } else {
+            None
+        };
+        let mut upsampled = self
+            .gaussian_upsampling
+            .upsample_features(&xe, &durations)?;
+        if let Some(ref target_mask) = target_mask {
+            upsampled = upsampled.broadcast_mul(&target_mask)?;
+        }
         let dec_out = self.decoder.forward(&upsampled)?;
         let audio = self.vocoder.forward(&dec_out)?;
-        Ok(audio)
+        let inference_ms = timer.elapsed().as_millis();
+        let audio_samples: Vec<AudioSamples> = unpad_sequences(&audio, &duration_sum)?
+            .into_iter()
+            .map(|s| s.into())
+            .collect();
+        Ok(InferenceOutput {
+            audio_samples,
+            inference_ms: inference_ms as f64,
+            sample_rate: self.inference_config.sample_rate,
+        })
     }
 }
 
@@ -611,36 +733,42 @@ impl OptiSpeechCNXModel {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use audio_ops::{AudioSamples, write_wave_samples_to_file};
+    use audio_ops::{write_wave_samples_to_file, AudioSamples};
     use std::path::PathBuf;
 
-    const MODEL_SAFETENSORS_FILENAME: &str = "./model/model.safetensors";
-    const INPUT_IDS: &[i64] = &[28, 27, 88, 3, 55, 73, 3, 40, 136, 31, 88, 39, 3, 116, 48, 3, 136, 53, 38, 73, 12];
+    const MODEL_SAFETENSORS_FILENAME: &str = "../model/model.safetensors";
+    const INPUT_IDS: &[&[i64]] = &[
+        &[28, 27, 88, 3, 55, 73, 3, 40, 136, 31, 88, 39, 3, 116, 48, 3, 136, 53, 38, 73, 12],
+        &[136, 35, 138, 48, 73, 40, 3, 55, 88, 3, 136, 65, 138, 102, 46, 45, 3, 36, 47, 138, 3, 37, 136, 68, 138, 38, 3, 45, 136, 41, 138, 102, 45, 74, 102, 35, 3, 65, 138, 102, 3, 80, 136, 116, 48, 74, 40, 30, 3, 28, 27, 88, 3, 37, 136, 65, 138, 52, 39, 88, 37, 3, 38, 136, 68, 138, 52, 10, 136, 53, 40, 45, 74, 30, 3, 55, 73, 3, 39, 136, 53, 40, 3, 88, 40, 55, 73, 3, 80, 102, 136, 35, 138, 40, 3, 46, 136, 76, 138, 28, 73, 40, 12],
+    ];
 
     #[test]
     fn should_load_weights() -> Result<()> {
-        let model = load_optispeech_cnx_model(None, MODEL_SAFETENSORS_FILENAME)?;
+        let model = OptiSpeechCNXModel::from_path(MODEL_SAFETENSORS_FILENAME, None)?;
         Ok(())
     }
     #[test]
     fn test_forward_pass() -> Result<()> {
         let config = OptiSpeechCNXConfig::default();
-        let model = load_optispeech_cnx_model(
-            Some(config.clone()),
-            &MODEL_SAFETENSORS_FILENAME
+        let model = OptiSpeechCNXModel::from_path(
+            MODEL_SAFETENSORS_FILENAME,
+            Some(config.clone())
         )?;
-        let input_ids =
-            Tensor::from_slice(INPUT_IDS, INPUT_IDS.len(), &Device::Cpu)?.unsqueeze(0)?;
-        let audio = model.synthesise(&input_ids, None, None, None).unwrap();
-        let audio_data: Vec<f32> = audio.squeeze(0)?.to_vec1()?;
-        let samples: AudioSamples = audio_data.into();
-        write_wave_samples_to_file(
-            &PathBuf::from("output.wav"),
-            samples.to_i16_vec().iter(),
-            config.sample_rate as u32,
-            config.num_channels as u32,
-            config.sample_width as u32,
-        )?;
+        let (inputs, input_lengths) = pad_sequences(INPUT_IDS, Some(0))?;
+        let synth_out = model
+            .synthesise(&inputs, &input_lengths, None, None, None)
+            .unwrap();
+        // dbg!("Infer: {inference_ms}, audio: {audio_ms}, rtf: {rtf}");
+        for (idx, samples) in synth_out.iter_audio().enumerate() {
+            let filename = format!("output_{idx}.wav");
+            write_wave_samples_to_file(
+                &PathBuf::from(filename),
+                samples.to_i16_vec().iter(),
+                config.sample_rate as u32,
+                config.num_channels as u32,
+                config.sample_width as u32,
+            )?;
+        }
         Ok(())
     }
 }

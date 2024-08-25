@@ -1,6 +1,6 @@
 [package]
-name = "optispeech"
-version = "0.3.0"
+name = "ospeak"
+version = "0.1.0"
 edition = "2021"
 description = "Neural Text-to-speech model optimized for quality and efficiency"
 license = "MIT"
@@ -11,8 +11,17 @@ categories = [ "algorithms", "science", "media",]
 authors = ["Musharraf Omer <ibnomer2011@hotmail.com>"]
 
 [dependencies]
-audio-ops = { path="../audio-ops", version="*" }
 anyhow = "1.0.86"
-candle-core = "0.6.0"
-candle-nn = "0.6.0"
+audio-ops = { path="../audio-ops", version="*" }
+clap = { version = "4.5.4", features = ["derive"] }
+env_logger = "0.10.2"
+log = "0.4.22"
+optispeech = { path="../optispeech", version="*" }
+serde = "1.0.208"
+serde_json = "1.0.125"
+serde_yaml = "0.9.27"
 
+[dependencies.xxhash-rust]
+
+version = "0.8.10"
+features  = ["xxh3",]

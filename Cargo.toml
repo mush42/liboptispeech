@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "audio-ops",
-    "optispeech",
+    "optispeech", "ospeak",
 ]
 
 [profile.release]
