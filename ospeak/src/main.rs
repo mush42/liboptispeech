@@ -1,9 +1,9 @@
 use anyhow::{self, Result};
 use audio_ops::write_wave_samples_to_file;
 use clap::Parser;
+use humantime::format_rfc3339_millis;
 use optispeech::OptiSpeechCNXModel;
 use serde::Deserialize;
-use xxhash_rust::xxh3::xxh3_64;
 use std::fs::File;
 use std::io::{self, prelude::*};
 use std::path::PathBuf;
@@ -88,7 +88,7 @@ struct ModelInput {
     d_factor: Option<f64>,
     p_factor: Option<f64>,
     e_factor: Option<f64>,
-    filename_suffix: Option<String>
+    output_fileid: Option<String>
 }
 
 fn ospeak_main(
@@ -108,13 +108,13 @@ fn ospeak_main(
     log::info!("RTF: {}", synth_out.rtf());
     log::info!("Latency: {}", synth_out.latency());
 
-    let file_suffix = model_input.filename_suffix.clone().unwrap_or_default();
+    let fileid = model_input.output_fileid.clone().unwrap_or_default();
     for (idx, samples) in synth_out.iter_audio().enumerate() { 
         if let Some(ref directory) = args.output_dir {
             if !directory.exists() {
                 std::fs::create_dir_all(directory)?;
             }
-            let output_filename = format!("{}_{}.wav", idx, &file_suffix);
+            let output_filename = format!("{}{}.wav", &fileid, idx);
             let output_filename = directory.join(output_filename);
             write_wave_samples_to_file(
                 &output_filename,
@@ -149,7 +149,10 @@ fn get_input(args: &Cli) -> anyhow::Result<ModelInput> {
             return get_input(args);
         }
     };
-    model_input.filename_suffix = Some(xxh3_64(input_buffer.as_bytes()).to_string());
+    let fileid = format_rfc3339_millis(std::time::SystemTime::now())
+        .to_string()
+        .replace(":", ".");
+    model_input.output_fileid = Some(fileid);
     Ok(model_input)
 }
 
