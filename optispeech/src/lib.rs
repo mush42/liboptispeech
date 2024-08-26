@@ -5,6 +5,11 @@ use candle_nn::{Module, VarBuilder};
 use audio_ops::AudioSamples;
 use std::path::Path;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 const FLOAT_DTYPE: DType = DType::F32;
 const LONG_DTYPE: DType = DType::I64;
 
