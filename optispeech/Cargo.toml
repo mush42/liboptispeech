@@ -13,7 +13,7 @@ authors = ["Musharraf Omer <ibnomer2011@hotmail.com>"]
 [dependencies]
 audio-ops = { path="../audio-ops", version="*" }
 anyhow = "1.0.86"
-candle-core = "0.6.0"
-candle-nn = "0.6.0"
 mimalloc = "0.1.43"
+candle-core = { git = "https://github.com/KimHenrikOtte/candle.git", branch = "wgpu_test", version = "0.6.1", features = ["wgpu"] }
+candle-nn = { git = "https://github.com/KimHenrikOtte/candle.git", branch = "wgpu_test", version = "0.6.1", features = ["wgpu"] }
 

@@ -2,7 +2,7 @@ use anyhow::{self, Result};
 use audio_ops::write_wave_samples_to_file;
 use clap::Parser;
 use humantime::format_rfc3339_millis;
-use optispeech::OptiSpeechCNXModel;
+use optispeech::{Accelerator, OptiSpeechCNXModel};
 use serde::Deserialize;
 use std::fs::File;
 use std::io::{self, prelude::*};
@@ -16,7 +16,8 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     log::info!("Loading model from file: {}", args.model_path.display());
-    let model = match OptiSpeechCNXModel::from_path(&args.model_path, None) {
+    let accelerator = Accelerator::WebGpu(0);
+    let model = match OptiSpeechCNXModel::from_path(&args.model_path, None, Some(accelerator)) {
         Ok(m) => m,
         Err(e) => {
             log::error!(

@@ -13,6 +13,21 @@ static GLOBAL: MiMalloc = MiMalloc;
 const FLOAT_DTYPE: DType = DType::F32;
 const LONG_DTYPE: DType = DType::I64;
 
+
+pub enum Accelerator  {
+    Cpu,
+    WebGpu(usize)
+}
+
+impl Accelerator   {
+    fn device(&self) -> Result<Device> {
+        match self {
+            Self::Cpu => Ok(Device::Cpu),
+            Self::WebGpu(ordinal) => Ok(Device::new_wgpu_sync(*ordinal)?)
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OptiSpeechCNXConfig {
     sample_rate: usize,
@@ -130,12 +145,28 @@ fn sequence_mask(lengths: &Tensor, max_length: Option<i64>) -> Result<Tensor> {
     Ok(mask)
 }
 
-fn layer_norm(dim: usize, eps: Option<f64>, vb: VarBuilder) -> Result<nn::LayerNorm> {
+fn layer_norm(dim: usize, eps: Option<f64>, vb: VarBuilder, device: Option<&Device>) -> Result<nn::LayerNorm> {
     let mut layer_config = nn::LayerNormConfig::default();
     if let Some(eps) = eps {
         layer_config.eps = eps;
     }
-    Ok(nn::layer_norm(dim, layer_config, vb)?)
+    let ws = vb.get(dim, "weight")?;
+    let ws = if let Some(dev) = device {
+        ws.to_device(dev)?
+    } else {
+        ws
+    };
+    if layer_config.affine {
+        let bs = vb.get(dim, "bias")?;
+        let bs = if let Some(dev) = device {
+            bs.to_device(dev)?
+        } else {
+            bs
+        };
+        Ok(nn::LayerNorm::new(ws, bs, layer_config.eps))
+    } else {
+        Ok(nn::LayerNorm::new_no_bias(ws, layer_config.eps))
+    }
 }
 
 fn conv1d(
@@ -146,6 +177,7 @@ fn conv1d(
     dilation: Option<usize>,
     groups: Option<usize>,
     vb: VarBuilder,
+    device: Option<&Device>
 ) -> Result<nn::Conv1d> {
     let mut layer_config = nn::conv::Conv1dConfig::default();
     if let Some(padding) = padding {
@@ -157,13 +189,45 @@ fn conv1d(
     if let Some(dilation) = dilation {
         layer_config.dilation = dilation;
     }
-    Ok(nn::conv1d(
-        in_channels,
-        out_channels,
-        kernel_size,
-        layer_config,
-        vb,
-    )?)
+    let ws = vb.get(
+        (out_channels, in_channels / layer_config.groups, kernel_size),
+        "weight",
+    )?;
+    let bs = vb.get(out_channels, "bias")?;
+    let (ws, bs) = if let Some(dev) = device {
+        (
+          ws.to_device(dev)?,
+          bs.to_device(dev)?
+        )
+    } else {
+      (ws, bs)
+    };
+    Ok(nn::Conv1d::new(ws, Some(bs), layer_config))
+}
+
+
+fn linear(in_dim: usize, out_dim: usize, vb: crate::VarBuilder, device: Option<&Device>) -> Result<nn::Linear> {
+    let ws = vb.get((out_dim, in_dim), "weight")?;
+    let bs = vb.get(out_dim, "bias")?;
+    let (ws, bs) = if let Some(dev) = device {
+        (
+          ws.to_device(dev)?,
+          bs.to_device(dev)?,
+        )
+    } else {
+      (ws, bs)
+    };
+    Ok(nn::Linear::new(ws, Some(bs)))
+}
+
+fn linear_no_bias(in_dim: usize, out_dim: usize, vb: crate::VarBuilder, device: Option<&Device>) -> Result<nn::Linear> {
+    let ws = vb.get((out_dim, in_dim), "weight")?;
+    let ws = if let Some(dev) = device {
+      ws.to_device(dev)?
+    } else {
+        ws
+    };
+    Ok(nn::Linear::new(ws, None))
 }
 
 struct ScaledSinusoidalEmbedding {
@@ -273,22 +337,37 @@ struct ConvNeXtLayer {
 }
 
 impl ConvNeXtLayer {
-    fn load(vb: &VarBuilder, dim: usize, intermediate_dim: usize) -> Result<Self> {
-        let dwconv = conv1d(dim, dim, 7, Some(3), None, Some(dim), vb.pp("dwconv"))?;
-        let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"))?;
+    fn load(vb: &VarBuilder, dim: usize, intermediate_dim: usize, device: Option<&Device>) -> Result<Self> {
+        let dwconv = conv1d(
+            dim,
+            dim,
+            7,
+            Some(3),
+            None,
+            Some(dim),
+            vb.pp("dwconv"),
+            device
+        )?;
+        let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"), device)?;
+        let gamma = vb.get(dim, "gamma")?;
+        let gamma = if let Some(dev) = device {
+            gamma.to_device(dev)?
+        } else {
+            gamma
+        };
         Ok(Self {
             dwconv,
             norm,
-            pwconv1: nn::linear(dim, intermediate_dim, vb.pp("pwconv1"))?,
-            pwconv2: nn::linear(intermediate_dim, dim, vb.pp("pwconv2"))?,
-            gamma: vb.get(dim, "gamma")?,
+            pwconv1: linear(dim, intermediate_dim, vb.pp("pwconv1"), device)?,
+            pwconv2: linear(intermediate_dim, dim, vb.pp("pwconv2"), device)?,
+            gamma
         })
     }
 }
 
 impl nn::Module for ConvNeXtLayer {
     fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
-        let residual = x.clone();
+        let residual = x.clone().to_device(x.device())?;
         let x = self.dwconv.forward(&x)?;
         let x = x.transpose(1, 2)?; // (B, C, T) -> (B, T, C)
         let x = self.norm.forward(&x)?;
@@ -313,14 +392,15 @@ impl ConvNeXtBackbone {
         num_layers: usize,
         dim: usize,
         intermediate_dim: usize,
+        device: Option<&Device>
     ) -> Result<Self> {
         let mut convnexts = nn::seq();
         for i in 0..num_layers {
             let layer =
-                ConvNeXtLayer::load(&vb.pp(format!("convnext.{i}")), dim, intermediate_dim)?;
+                ConvNeXtLayer::load(&vb.pp(format!("convnext.{i}")), dim, intermediate_dim, device)?;
             convnexts = convnexts.add(layer);
         }
-        let final_layer_norm = layer_norm(dim, Some(1e-6), vb.pp("final_layer_norm"))?;
+        let final_layer_norm = layer_norm(dim, Some(1e-6), vb.pp("final_layer_norm"), device)?;
         Ok(Self {
             convnexts,
             final_layer_norm,
@@ -350,6 +430,7 @@ impl VariancePredictor {
         num_layers: usize,
         intermediate_dim: usize,
         kernel_size: usize,
+        device: Option<&Device>
     ) -> Result<Self> {
         let padding = (kernel_size - 1) / 2;
         let mut convs = nn::seq();
@@ -364,15 +445,16 @@ impl VariancePredictor {
                 None,
                 None,
                 vb.pp("0"),
+                device
             )?;
             convs = convs
                 .add(|x: &Tensor| x.transpose(1, 2))
                 .add(conv_layer)
                 .add(|x: &Tensor| x.relu())
                 .add(|x: &Tensor| x.transpose(1, 2))
-                .add(layer_norm(intermediate_dim, None, vb.pp("2"))?);
+                .add(layer_norm(intermediate_dim, None, vb.pp("2"), device)?);
         }
-        let linear = nn::linear(intermediate_dim, 1, vb.pp("linear"))?;
+        let linear = linear(intermediate_dim, 1, vb.pp("linear"), device)?;
         Ok(Self { convs, linear })
     }
 }
@@ -398,9 +480,10 @@ impl DurationPredictor {
         intermediate_dim: usize,
         kernel_size: usize,
         clip_val: f64,
+        device: Option<&Device>
     ) -> Result<Self> {
         let var_predictor =
-            VariancePredictor::load(&vb, dim, num_layers, intermediate_dim, kernel_size)?;
+            VariancePredictor::load(&vb, dim, num_layers, intermediate_dim, kernel_size, device)?;
         Ok(Self {
             var_predictor,
             clip_val,
@@ -437,6 +520,7 @@ impl PitchPredictor {
         intermediate_dim: usize,
         kernel_size: usize,
         embed_kernel_size: usize,
+        device: Option<&Device>
     ) -> Result<Self> {
         let predictor = VariancePredictor::load(
             &vb.pp("predictor"),
@@ -444,6 +528,7 @@ impl PitchPredictor {
             num_layers,
             intermediate_dim,
             kernel_size,
+            device
         )?;
         let padding = (embed_kernel_size - 1) / 2;
         let embed = conv1d(
@@ -454,6 +539,7 @@ impl PitchPredictor {
             None,
             None,
             vb.pp("embed.0"),
+            device
         )?;
         Ok(Self { predictor, embed })
     }
@@ -492,16 +578,26 @@ impl WaveNeXtVocoder {
         intermediate_dim: usize,
         n_fft: usize,
         hop_size: usize,
+        device: Option<&Device>,
     ) -> Result<Self> {
-        let embed = conv1d(input_dim, dim, 7, Some(3), None, None, vb.pp("embed"))?;
-        let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"))?;
+        let embed = conv1d(
+            input_dim,
+            dim,
+            7,
+            Some(3),
+            None,
+            None,
+            vb.pp("embed"),
+            device
+          )?;
+        let norm = layer_norm(dim, Some(1e-6), vb.pp("norm"), device)?;
         let backbone =
-            ConvNeXtBackbone::load(&vb.pp("backbone"), num_layers, dim, intermediate_dim)?;
+            ConvNeXtBackbone::load(&vb.pp("backbone"), num_layers, dim, intermediate_dim, device)?;
         // head
         let l_fft = n_fft + 2;
         let l_shift = hop_size;
-        let linear_1 = nn::linear(dim, l_fft, vb.pp("head.linear_1"))?;
-        let linear_2 = nn::linear_no_bias(l_fft, l_shift, vb.pp("head.linear_2"))?;
+        let linear_1 = linear(dim, l_fft, vb.pp("head.linear_1"), device)?;
+        let linear_2 = linear_no_bias(l_fft, l_shift, vb.pp("head.linear_2"), device)?;
         Ok(Self {
             embed,
             norm,
@@ -524,7 +620,6 @@ impl nn::Module for WaveNeXtVocoder {
         let x = self.linear_2.forward(&x)?;
         let (_, c, t) = x.dims3()?;
         let audio = x.reshape((b, c * t))?;
-        let audio = audio.clamp(-1.0, 1.0)?;
         Ok(audio)
     }
 }
@@ -563,6 +658,7 @@ impl InferenceOutput {
 
 pub struct OptiSpeechCNXModel {
     pub inference_config: InferenceConfig,
+    pub device: Option<Device>,
     text_embedding: TextEmbedding,
     encoder: ConvNeXtBackbone,
     duration_predictor: DurationPredictor,
@@ -581,15 +677,18 @@ impl OptiSpeechCNXModel {
     pub fn from_path<P: AsRef<Path>>(
         model_file_path: P,
         config: Option<OptiSpeechCNXConfig>,
+        accelerator: Option<Accelerator>
     ) -> Result<Self> {
         let config = config.unwrap_or_default();
-        let device = Device::Cpu;
+        let vb_device = Device::Cpu;
         let vb =
-            unsafe { VarBuilder::from_mmaped_safetensors(&[model_file_path], FLOAT_DTYPE, &device)? };
-        let model = Self::load(config, vb)?;
+            unsafe { VarBuilder::from_mmaped_safetensors(&[model_file_path], FLOAT_DTYPE, &vb_device)? };
+        let device = accelerator.map(|accel| accel.device().unwrap());
+        let model = Self::load(config, vb, device)?;
         Ok(model)
     }
-    fn load(config: OptiSpeechCNXConfig, vb: VarBuilder) -> Result<Self> {
+    fn load(config: OptiSpeechCNXConfig, vb: VarBuilder, dev: Option<Device>) -> Result<Self> {
+        let device = dev.as_ref();
         let text_embedding = TextEmbedding::load(
             &vb.pp("text_embedding"),
             config.n_vocab,
@@ -601,6 +700,7 @@ impl OptiSpeechCNXModel {
             config.num_enc_layers,
             config.enc_dec_dim,
             config.enc_dec_intermediate_dim,
+            device
         )?;
         let duration_predictor = DurationPredictor::load(
             &vb.pp("duration_predictor"),
@@ -609,6 +709,7 @@ impl OptiSpeechCNXModel {
             config.dp_intermediate_dim,
             config.dp_kernel_size,
             config.dp_clip_val,
+            None,
         )?;
         let pitch_predictor = PitchPredictor::load(
             &vb.pp("pitch_predictor"),
@@ -617,6 +718,7 @@ impl OptiSpeechCNXModel {
             config.pp_intermediate_dim,
             config.pp_kernel_size,
             config.pp_embed_kernel_size,
+            None
         )?;
         let energy_predictor = EnergyPredictor::load(
             &vb.pp("energy_predictor"),
@@ -625,6 +727,7 @@ impl OptiSpeechCNXModel {
             config.ep_intermediate_dim,
             config.ep_kernel_size,
             config.ep_embed_kernel_size,
+            None
         )?;
         let gaussian_upsampling = GaussianUpsampling::default();
         let decoder = ConvNeXtBackbone::load(
@@ -632,6 +735,7 @@ impl OptiSpeechCNXModel {
             config.num_dec_layers,
             config.enc_dec_dim,
             config.enc_dec_intermediate_dim,
+            device
         )?;
         let vocoder = WaveNeXtVocoder::load(
             &vb.pp("wav_generator"),
@@ -641,6 +745,7 @@ impl OptiSpeechCNXModel {
             config.vocoder_intermediate_dim,
             config.n_fft,
             config.hop_size,
+            None
         )?;
         let inference_config = InferenceConfig {
             sample_rate: config.sample_rate,
@@ -650,6 +755,7 @@ impl OptiSpeechCNXModel {
         };
         Ok(Self {
             inference_config,
+            device: dev,
             text_embedding,
             encoder,
             duration_predictor,
@@ -671,6 +777,8 @@ impl OptiSpeechCNXModel {
         p_factor: Option<f64>,
         e_factor: Option<f64>,
     ) -> Result<InferenceOutput> {
+        let cpu_device = Device::Cpu;
+        let device = self.device.as_ref().unwrap_or(&cpu_device);
         let (d_factor, p_factor, e_factor) = (
             d_factor.or(Some(self.inference_config.d_factor)),
             p_factor.or(Some(self.inference_config.p_factor)),
@@ -682,17 +790,21 @@ impl OptiSpeechCNXModel {
         let mask = if batch > 1 {
             let mask = sequence_mask(&input_lengths, None)?
                 .unsqueeze(2)?
-                .to_dtype(FLOAT_DTYPE)?;
+                .to_dtype(FLOAT_DTYPE)?
+                .to_device(&cpu_device)?;
             Some(mask)
         } else {
             None
         };
+        let device_mask = None; //mask.clone().map(|m| m.to_device(device).unwrap());
         let input_padding_mask = match mask {
             Some(ref m) => Some(m.ones_like()?.sub(m)?),
             None => None,
         };
         let token_emb = self.text_embedding.forward(&inputs)?;
+        let token_emb = token_emb.to_device(&device)?;
         let enc_out = self.encoder.forward(&token_emb)?;
+        let enc_out = enc_out.to_device(&cpu_device)?;
         let durations = self
             .duration_predictor
             .infer(&enc_out, mask.as_ref(), d_factor)?;
@@ -700,9 +812,10 @@ impl OptiSpeechCNXModel {
             .pitch_predictor
             .infer(&enc_out, mask.as_ref(), p_factor)?;
         let mut xe = self.energy_predictor.infer(&xp, mask.as_ref(), e_factor)?;
-        if let Some(ref mask) = mask {
+        if let Some(ref mask) = device_mask {
             xe = xe.broadcast_mul(&mask)?;
         }
+        let xe = xe.to_device(&cpu_device)?;
         let duration_sum = durations.sum(1)?;
         let target_mask = if batch > 1 {
             Some(
@@ -719,8 +832,12 @@ impl OptiSpeechCNXModel {
         if let Some(ref target_mask) = target_mask {
             upsampled = upsampled.broadcast_mul(&target_mask)?;
         }
+        let upsampled = upsampled.to_device(&device)?;
         let dec_out = self.decoder.forward(&upsampled)?;
+        let dec_out = dec_out.to_device(&cpu_device)?;
         let audio = self.vocoder.forward(&dec_out)?;
+        let audio = audio.to_device(&cpu_device)?;
+        let audio = audio.clamp(-1.0, 1.0)?;
         let inference_ms = timer.elapsed().as_millis();
         let audio_samples: Vec<AudioSamples> = unpad_sequences(&audio, &duration_sum)?
             .into_iter()
@@ -749,15 +866,18 @@ mod tests {
 
     #[test]
     fn should_load_weights() -> Result<()> {
-        let model = OptiSpeechCNXModel::from_path(MODEL_SAFETENSORS_FILENAME, None)?;
+        let accelerator = Accelerator::WebGpu(0);
+        let model = OptiSpeechCNXModel::from_path(MODEL_SAFETENSORS_FILENAME, None, Some(accelerator))?;
         Ok(())
     }
     #[test]
     fn test_forward_pass() -> Result<()> {
         let config = OptiSpeechCNXConfig::default();
+        let accelerator = Accelerator::WebGpu(0);
         let model = OptiSpeechCNXModel::from_path(
             MODEL_SAFETENSORS_FILENAME,
-            Some(config.clone())
+            Some(config.clone()),
+            Some(accelerator)
         )?;
         let (inputs, input_lengths) = pad_sequences(INPUT_IDS, Some(0))?;
         let synth_out = model
