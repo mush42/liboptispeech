@@ -11,8 +11,8 @@ categories = [ "algorithms", "science", "media",]
 authors = ["Musharraf Omer <ibnomer2011@hotmail.com>"]
 
 [dependencies]
-anyhow = "1.0.86"
 audio-ops = { path="../audio-ops", version="*" }
+anyhow = "1.0.94"
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.10.2"
 humantime = "2.1.0"
